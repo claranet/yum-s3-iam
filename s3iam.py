@@ -245,10 +245,25 @@ class S3Grabber(object):
                 response.close()
 
     def get_credentials(self):
-        """Read IAM credentials from AWS metadata store.
+        """Read IAM credentials from the environment or instance metadata service.
         Note: This method should be explicitly called after constructing new
               object, as in 'explicit is better than implicit'.
         """
+
+        # Try to use environment variables.
+        # This overwrites any credentials defined in the repo.
+        if "AWS_ACCESS_KEY_ID" in os.environ:
+            self.access_key = os.environ['AWS_ACCESS_KEY_ID']
+        if "AWS_SECRET_ACCESS_KEY" in os.environ:
+            self.secret_key = os.environ['AWS_SECRET_ACCESS_KEY']
+        if "AWS_SESSION_TOKEN" in os.environ:
+            self.token = os.environ['AWS_SESSION_TOKEN']
+
+        # Stop if credentials were in environment variables or the repo.
+        if self.access_key or self.secret_key:
+            return
+
+        # Try to use the instance metadata service.
         request = urllib2.Request(
             urlparse.urljoin(
                 urlparse.urljoin(
@@ -268,22 +283,18 @@ class S3Grabber(object):
             if response:
                 response.close()
 
-        if self.access_key is None and self.secret_key is None:
-            if "AWS_ACCESS_KEY_ID" in os.environ:
-                self.access_key = os.environ['AWS_ACCESS_KEY_ID']
-            if "AWS_SECRET_ACCESS_KEY" in os.environ:
-                self.secret_key = os.environ['AWS_SECRET_ACCESS_KEY']
-            if "AWS_SESSION_TOKEN" in os.environ:
-                self.token = os.environ['AWS_SESSION_TOKEN']
+        # Stop if credentials were in the instance metadata service.
+        if self.access_key or self.secret_key:
+            return
 
-        if self.access_key is None and self.secret_key is None:
-            if hasattr(self, 'name'):
-                msg = "Could not access AWS credentials, skipping repository '%s'" % (self.name)
-            else:
-                msg = "Could not access AWS credentials"
-            print msg
-            from urlgrabber.grabber import URLGrabError
-            raise URLGrabError(7, msg)
+        # Credentials not found, raise an exception.
+        if hasattr(self, 'name'):
+            msg = "Could not access AWS credentials, skipping repository '%s'" % (self.name)
+        else:
+            msg = "Could not access AWS credentials"
+        print msg
+        from urlgrabber.grabber import URLGrabError
+        raise URLGrabError(7, msg)
 
     def set_credentials(self, access_key, secret_key):
         self.access_key = access_key
